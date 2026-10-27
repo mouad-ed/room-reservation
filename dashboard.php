@@ -1,0 +1,25 @@
+<?php require __DIR__.'/app/layout.php';
+$user=must_login();
+$rooms=scalar("SELECT COUNT(*) FROM rooms WHERE status<>'archived'");
+$active=scalar("SELECT COUNT(*) FROM rooms WHERE status='active'");
+$occupied=scalar("SELECT COUNT(DISTINCT r.room_id) FROM reservations r WHERE r.booking_date=CURDATE() AND r.start_time<=CURTIME() AND r.end_time>CURTIME() AND r.status IN ('approved','pending')");
+$bookings=scalar('SELECT COUNT(*) FROM reservations '.(is_admin()?'':'WHERE user_id='.(int)$user['id']));
+$today=scalar('SELECT COUNT(*) FROM reservations WHERE booking_date=CURDATE()'.(is_admin()?'':' AND user_id='.(int)$user['id']));
+$upcoming=scalar("SELECT COUNT(*) FROM reservations WHERE status IN ('approved','pending') AND TIMESTAMP(booking_date,start_time)>NOW()".(is_admin()?'':' AND user_id='.(int)$user['id']));
+$pending=scalar("SELECT COUNT(*) FROM reservations WHERE status='pending'".(is_admin()?'':' AND user_id='.(int)$user['id']));
+$cancelled=scalar("SELECT COUNT(*) FROM reservations WHERE status='cancelled'".(is_admin()?'':' AND user_id='.(int)$user['id']));
+$soon=all_rows("SELECT r.*,u.name AS organizer,s.name AS room_name FROM reservations r JOIN users u ON u.id=r.user_id JOIN rooms s ON s.id=r.room_id WHERE r.status IN ('approved','pending') AND TIMESTAMP(r.booking_date,r.start_time)>=NOW()".(is_admin()?'':' AND r.user_id=?')." ORDER BY r.booking_date,r.start_time LIMIT 6",is_admin()?[]:[$user['id']]);
+$series=all_rows("SELECT DATE_FORMAT(booking_date,'%Y-%m') AS month,COUNT(*) AS value FROM reservations WHERE booking_date>=DATE_FORMAT(DATE_SUB(CURDATE(),INTERVAL 5 MONTH),'%Y-%m-01') GROUP BY DATE_FORMAT(booking_date,'%Y-%m') ORDER BY month");
+$rate=$rooms>0 ? round(100*$occupied/$rooms):0;
+page_start('Tableau de bord'); titlebar('Vue d’ensemble','Bonjour, '.$user['name'].' 👋','Voici les informations en temps réel de vos espaces et réservations.'); ?>
+<div class="row g-3 mb-4">
+<?php foreach ([['Salles', $rooms,'door-open'],['Salles disponibles',max(0,$active-$occupied),'check-circle'],['Salles occupées',$occupied,'people'],['Réservations',$bookings,'calendar2-check'],['Aujourd’hui',$today,'calendar-day'],['À venir',$upcoming,'clock-history'],['En attente',$pending,'hourglass-split'],['Annulées',$cancelled,'x-circle']] as [$label,$value,$ico]): ?>
+<div class="col-6 col-xl-3"><div class="stat-card"><div class="stat-label"><?=h($label)?></div><div class="stat-num"><?=h($value)?></div><div class="stat-icon"><i class="bi bi-<?=h($ico)?>"></i></div><div class="stat-small">Données MySQL actualisées</div></div></div>
+<?php endforeach;?></div>
+<div class="row g-4 mb-4"><div class="col-lg-8"><div class="panel h-100"><div class="panel-head"><h3>Activité des réservations</h3><span class="muted small">6 derniers mois</span></div><div style="min-height:245px"><canvas id="bookingsChart" height="90" aria-label="Réservations par mois"></canvas><noscript>Graphique disponible avec JavaScript.</noscript></div></div></div><div class="col-lg-4"><div class="panel h-100"><div class="panel-head"><h3>Occupation actuelle</h3></div><div class="text-center py-3"><div class="stat-num" style="font-size:54px;color:#655be5"><?=h($rate)?>%</div><p class="muted">Salles occupées actuellement</p><div class="progress mb-4" style="height:10px"><div class="progress-bar" style="width:<?=h($rate)?>%;background:#655be5"></div></div><div class="d-grid gap-2"><a class="btn btn-primary" href="<?=h(url('reservation.php'))?>"><i class="bi bi-plus-lg me-2"></i>Nouvelle réservation</a><a class="btn btn-outline-primary" href="<?=h(url('salles.php'))?>">Voir les salles</a></div></div></div></div></div>
+<div class="panel"><div class="panel-head"><h3>Prochaines réunions</h3><a href="<?=h(url('calendrier.php'))?>" class="small">Voir le calendrier <i class="bi bi-arrow-up-right"></i></a></div><div class="table-responsive"><table class="table align-middle"><thead><tr><th>Réunion</th><th>Salle</th><th>Organisateur</th><th>Date</th><th>Heure</th><th>Statut</th></tr></thead><tbody>
+<?php foreach($soon as $r): ?><tr><td class="fw-semibold"><?=h($r['title'])?></td><td><?=h($r['room_name'])?></td><td><?=h($r['organizer'])?></td><td><?=h($r['booking_date'])?></td><td><?=h(substr($r['start_time'],0,5).'–'.substr($r['end_time'],0,5))?></td><td><?=pill($r['status'])?></td></tr><?php endforeach;?>
+<?php if(!$soon):?><tr><td colspan="6" class="empty-state"><i class="bi bi-calendar2-check"></i>Aucune réunion à venir.</td></tr><?php endif;?></tbody></table></div></div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script><script>
+window.addEventListener('load', () => {if (!window.Chart) return;const rows=<?=json_encode($series,JSON_HEX_TAG|JSON_HEX_AMP)?>;new Chart(document.getElementById('bookingsChart'),{type:'bar',data:{labels:rows.map(x=>x.month),datasets:[{label:'Réservations',data:rows.map(x=>Number(x.value)),backgroundColor:'#7a77ec',borderRadius:8,maxBarThickness:45}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{grid:{display:false}}}}});});</script>
+<?php page_end(); ?>

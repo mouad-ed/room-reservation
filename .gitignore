@@ -1,0 +1,28 @@
+
+# Local configuration
+/config/local.php
+.env
+.env.*
+
+# Keep configuration examples
+!.env.example
+
+# Private database data
+/database/legacy_import.sql
+*.sql.gz
+*.bak
+
+# Logs
+*.log
+
+# Local files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Dependencies
+/vendor/
+/node_modules/
+
+# User uploads containing private data
+/uploads/
